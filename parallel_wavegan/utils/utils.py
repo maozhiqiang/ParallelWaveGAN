@@ -126,6 +126,15 @@ class HDF5ScpLoader(object):
         >>> loader = HDF5ScpLoader("hdf5.scp", "feats")
         >>> array = loader["key1"]
 
+        key1 /some/path/a.h5:feats_1,feats_2
+        key2 /some/path/b.h5:feats_1,feats_2
+        key3 /some/path/c.h5:feats_1,feats_2
+        key4 /some/path/d.h5:feats_1,feats_2
+        ...
+        >>> loader = HDF5ScpLoader("hdf5.scp")
+        # feats_1 and feats_2 will be concatenated
+        >>> array = loader["key1"]
+
     """
 
     def __init__(self, feats_scp, default_hdf5_path="feats"):
@@ -152,7 +161,12 @@ class HDF5ScpLoader(object):
         """Get ndarray for a given key."""
         p = self.data[key]
         if ":" in p:
-            return read_hdf5(*p.split(":"))
+            if len(p.split(",")) == 1:
+                return read_hdf5(*p.split(":"))
+            else:
+                p1, p2 = p.split(":")
+                feats = [read_hdf5(p1, p) for p in p2.split(",")]
+                return np.concatenate([f if len(f.shape) != 1 else f.reshape(-1, 1) for f in feats], 1)
         else:
             return read_hdf5(p, self.default_hdf5_path)
 
@@ -167,3 +181,62 @@ class HDF5ScpLoader(object):
     def keys(self):
         """Return the keys of the scp file."""
         return self.data.keys()
+
+    def values(self):
+        """Return the values of the scp file."""
+        for key in self.keys():
+            yield self[key]
+
+
+class NpyScpLoader(object):
+    """Loader class for a fests.scp file of npy file.
+
+    Examples:
+        key1 /some/path/a.npy
+        key2 /some/path/b.npy
+        key3 /some/path/c.npy
+        key4 /some/path/d.npy
+        ...
+        >>> loader = NpyScpLoader("feats.scp")
+        >>> array = loader["key1"]
+
+    """
+
+    def __init__(self, feats_scp):
+        """Initialize npy scp loader.
+
+        Args:
+            feats_scp (str): Kaldi-style feats.scp file with npy format.
+
+        """
+        with open(feats_scp) as f:
+            lines = [line.replace("\n", "") for line in f.readlines()]
+        self.data = {}
+        for line in lines:
+            key, value = line.split()
+            self.data[key] = value
+
+    def get_path(self, key):
+        """Get npy file path for a given key."""
+        return self.data[key]
+
+    def __getitem__(self, key):
+        """Get ndarray for a given key."""
+        return np.load(self.data[key])
+
+    def __len__(self):
+        """Return the length of the scp file."""
+        return len(self.data)
+
+    def __iter__(self):
+        """Return the iterator of the scp file."""
+        return iter(self.data)
+
+    def keys(self):
+        """Return the keys of the scp file."""
+        return self.data.keys()
+
+    def values(self):
+        """Return the values of the scp file."""
+        for key in self.keys():
+            yield self[key]
